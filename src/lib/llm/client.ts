@@ -183,7 +183,7 @@ export type TestResult = {
   ok: boolean;
   chatOk: boolean;
   embeddingOk: boolean;
-  /** embedding 维度，用来提醒用户和数据库的 vector(1536) 是否匹配 */
+  /** embedding 维度，用来和 EMBEDDING_DIMENSIONS 对比是否匹配 */
   embeddingDimensions?: number;
   error?: string;
 };

@@ -11,7 +11,7 @@
 create or replace function public.match_chunks(
   p_book_id uuid,
   p_max_chapter integer,
-  p_query_embedding vector(1536),
+  p_query_embedding vector(1024),
   p_match_count integer default 8
 )
 returns table (

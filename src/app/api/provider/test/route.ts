@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decryptApiKey } from "@/lib/crypto";
 import { testConnection } from "@/lib/llm/client";
+import { EMBEDDING_DIMENSIONS } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -62,12 +63,14 @@ export async function POST(request: Request) {
     embeddingModel,
   });
 
-  // 数据库里 embedding 列是 vector(1536)，维度对不上得提醒
+  // 维度对不上就会在生成索引时整本失败，这里提前提醒
   const dimensionWarning =
-    result.embeddingDimensions && result.embeddingDimensions !== 1536
+    result.embeddingDimensions &&
+    result.embeddingDimensions !== EMBEDDING_DIMENSIONS
       ? `注意：该 Embedding 模型输出 ${result.embeddingDimensions} 维，` +
-        `而数据库的 chunks.embedding 是 vector(1536)。` +
-        `需要把 migration 里的维度改成 ${result.embeddingDimensions} 再重建索引。`
+        `而数据库的 chunks.embedding 是 vector(${EMBEDDING_DIMENSIONS})。` +
+        `需要把 src/lib/constants.ts 和 supabase/migrations 里的维度都改成 ` +
+        `${result.embeddingDimensions}，然后重建 chunks 表。`
       : undefined;
 
   return NextResponse.json({ ...result, dimensionWarning });

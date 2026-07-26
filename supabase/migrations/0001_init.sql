@@ -87,7 +87,7 @@ create table if not exists public.chunks (
   chapter_index integer not null,
   chunk_index integer not null,
   content text not null,
-  embedding vector(1536),
+  embedding vector(1024),
   created_at timestamptz not null default now()
 );
 
@@ -95,8 +95,18 @@ create table if not exists public.chunks (
 create index if not exists chunks_scope_idx
   on public.chunks (user_id, book_id, chapter_index);
 
-create index if not exists chunks_embedding_idx
-  on public.chunks using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+-- 这里故意不建 ivfflat / hnsw 向量索引。
+--
+-- 原因是规模不匹配：一本长篇切完大约几百个 chunk，而 ivfflat 的 lists=100
+-- 会把它们分成上百个桶，每桶只剩几条；pgvector 默认 probes=1，
+-- 一次查询实际只扫其中一个桶，召回率会低到没法用。
+--
+-- 而且无剧透检索本来就先按 (user_id, book_id, chapter_index) 过滤，
+-- 候选集已经很小，直接精确 KNN 又快又准，不需要近似索引。
+--
+-- 等单本书的 chunk 数上到几万，再加 hnsw（比 ivfflat 更省心，不用调 lists）：
+--   create index chunks_embedding_idx on public.chunks
+--     using hnsw (embedding vector_cosine_ops);
 
 -- -------------------------------------------------------- reading_progress
 

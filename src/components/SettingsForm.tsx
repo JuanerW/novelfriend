@@ -21,11 +21,14 @@ const FIELD =
   "w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-300";
 
 export default function SettingsForm({ saved }: { saved: Saved }) {
-  const [baseUrl, setBaseUrl] = useState(saved?.base_url ?? "https://api.openai.com/v1");
+  // 默认值按通义（DashScope 的 OpenAI 兼容模式）填，换别家直接改这几个框
+  const [baseUrl, setBaseUrl] = useState(
+    saved?.base_url ?? "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  );
   const [apiKey, setApiKey] = useState("");
-  const [chatModel, setChatModel] = useState(saved?.chat_model ?? "gpt-4o-mini");
+  const [chatModel, setChatModel] = useState(saved?.chat_model ?? "qwen-plus");
   const [embeddingModel, setEmbeddingModel] = useState(
-    saved?.embedding_model ?? "text-embedding-3-small",
+    saved?.embedding_model ?? "text-embedding-v3",
   );
 
   const [hasSavedKey, setHasSavedKey] = useState(Boolean(saved));
@@ -110,11 +113,12 @@ export default function SettingsForm({ saved }: { saved: Saved }) {
         <input
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder="https://api.openai.com/v1"
+          placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
           className={FIELD}
         />
         <p className="mt-1 text-xs text-neutral-400">
           填到 /v1 为止，不用带 /chat/completions。
+          通义是 https://dashscope.aliyuncs.com/compatible-mode/v1
         </p>
       </div>
 

@@ -91,9 +91,21 @@ API Key 用 AES-256-GCM 加密后存库，只在服务端解密，
 
 ### Embedding 维度
 
-`chunks.embedding` 声明为 `vector(1536)`，匹配 OpenAI `text-embedding-3-small`。
-换用其它维度的模型时，「测试连接」会提示维度不符，
-需要改 `0001_init.sql` 里的维度并重建索引。
+`chunks.embedding` 声明为 `vector(1024)`，匹配通义 `text-embedding-v3`。
+
+换别家模型要改**三处**，而且必须一致：
+
+- `src/lib/constants.ts` 的 `EMBEDDING_DIMENSIONS`
+- `0001_init.sql` 里 `chunks.embedding vector(N)`
+- `0002_match_chunks.sql` 里 `p_query_embedding vector(N)`
+
+改完要重建 `chunks` 表——pgvector 的维度写在 DDL 里，不能在线修改。
+「测试连接」会报出模型实际维度并提示不符，不用等到生成索引时才发现。
+
+常见取值：通义 text-embedding-v3 = 1024，OpenAI text-embedding-3-small = 1536，
+智谱 embedding-3 = 2048，BAAI/bge-m3 = 1024。
+
+**DeepSeek 没有 embedding 接口**，只能做 Chat；用它的话 Embedding 得另找一家。
 
 ## 测试
 

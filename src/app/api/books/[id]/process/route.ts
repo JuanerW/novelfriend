@@ -3,16 +3,13 @@ import { createClient } from "@/lib/supabase/server";
 import { loadProviderConfig } from "@/lib/llm/provider";
 import { createEmbeddings } from "@/lib/llm/client";
 import { chunkChapter } from "@/lib/retrieval/chunk";
+import { EMBED_BATCH, EMBEDDING_DIMENSIONS } from "@/lib/constants";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-/** 一次请求送多少条文本去做 embedding。 */
-const EMBED_BATCH = 64;
 /** 一次往库里写多少行。 */
 const INSERT_BATCH = 100;
-/** 数据库里 chunks.embedding 的维度。 */
-const EXPECTED_DIMENSIONS = 1536;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -132,11 +129,11 @@ export async function POST(_request: Request, { params }: Params) {
             batch.map((c) => c.content),
           );
 
-          if (vectors[0]?.length !== EXPECTED_DIMENSIONS) {
+          if (vectors[0]?.length !== EMBEDDING_DIMENSIONS) {
             return await markFailed(
               `Embedding 维度是 ${vectors[0]?.length}，但数据库的 chunks.embedding 是 ` +
-                `vector(${EXPECTED_DIMENSIONS})。请换一个 ${EXPECTED_DIMENSIONS} 维的模型，` +
-                `或修改 migration 里的维度后重建索引。`,
+                `vector(${EMBEDDING_DIMENSIONS})。请换一个 ${EMBEDDING_DIMENSIONS} 维的模型，` +
+                `或改 src/lib/constants.ts 与 migration 里的维度后重建表。`,
             );
           }
 
