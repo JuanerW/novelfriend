@@ -12,7 +12,7 @@
 | 一 | 项目基础、注册登录、页面布局 | ✅ |
 | 二 | TXT 上传、章节识别、目录与正文、阅读进度 | ✅ |
 | 三 | LLM 配置、切分、Embedding、pgvector 检索 | 🟡 代码完成，待接真实 API 联调 |
-| 四 | 无剧透聊天、章节引用、对话历史 | ⬜ |
+| 四 | 无剧透聊天、章节引用、对话历史 | 🟡 代码完成，待接真实 API 联调 |
 | 五 | 引用跳转、进度显示、失败重试、EPUB | ⬜ |
 
 ## 本地启动
@@ -94,6 +94,21 @@ API Key 用 AES-256-GCM 加密后存库，只在服务端解密，
 `chunks.embedding` 声明为 `vector(1536)`，匹配 OpenAI `text-embedding-3-small`。
 换用其它维度的模型时，「测试连接」会提示维度不符，
 需要改 `0001_init.sql` 里的维度并重建索引。
+
+## 测试
+
+```bash
+npm test        # node:test，不需要 Supabase 或 LLM API
+npm run typecheck
+```
+
+`fixtures/test-novel.txt` 是 CLAUDE.md「测试重点」里那本四章测试小说：
+第 1 章主角登场、第 2 章出现黑衣人、第 3 章有人猜测是甲、第 4 章揭晓是乙。
+
+`src/lib/retrieval/search.test.ts` 用一个复刻 `match_chunks` 语义的假 rpc
+验证章节截断：进度在第 2 章时检索结果里不能出现「乙」或第 3 章的内容，
+进度到第 4 章才允许出现真相。还有一条用例故意让假 rpc **不过滤**章节，
+确认 `searchWithinProgress` 的越界断言会抛错，而不是把后文喂给模型。
 
 ## 无剧透规则
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProgressControl from "@/components/ProgressControl";
+import ChatPanel from "@/components/ChatPanel";
 import type { ChapterSummary } from "@/types/db";
 
 export const dynamic = "force-dynamic";
@@ -164,16 +165,13 @@ export default async function BookPage({ params, searchParams }: Props) {
         </div>
       </article>
 
-      {/* 右：问答（阶段四接入） */}
+      {/* 右：无剧透问答 */}
       <aside className="lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
-        <div className="flex h-full flex-col rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-          <h2 className="text-sm font-medium">提问</h2>
-          <p className="mt-3 text-xs leading-6 text-neutral-400">
-            无剧透问答将在阶段四接入。
-            <br />
-            届时只会检索第 {savedProgress} 章及之前的原文。
-          </p>
-        </div>
+        <ChatPanel
+          bookId={bookId}
+          savedProgress={savedProgress}
+          ready={book.status === "ready"}
+        />
       </aside>
     </div>
   );
