@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decodeNovel } from "@/lib/parser/decode";
 import { guessTitleFromFilename, parseChapters } from "@/lib/parser/chapters";
+import { toStorageName } from "@/lib/parser/filename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -86,8 +87,10 @@ export async function POST(request: Request) {
   try {
     const buffer = await file.arrayBuffer();
 
-    // 2) 存原文件，路径 {user_id}/{book_id}/原文件名
-    const filePath = `${user.id}/${book.id}/${file.name}`;
+    // 2) 存原文件，路径 {user_id}/{book_id}/文件名
+    // 文件名要清洗——Storage 的 key 不接受中文和全角标点。
+    // 真书名在 books.title 里，这里不怕失真。
+    const filePath = `${user.id}/${book.id}/${toStorageName(file.name)}`;
     const { error: uploadError } = await supabase.storage
       .from("novels")
       .upload(filePath, buffer, {
