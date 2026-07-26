@@ -27,13 +27,21 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // 必须调用，否则 session 不会续期
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // 必须调用，否则 session 不会续期。
+  // Supabase 不可达或环境变量没配好时按「未登录」处理，不要让整站 500。
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    user = null;
+  }
 
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+
+  // API 路由不做跳转，交给各自的 handler 返回 401 JSON
+  if (pathname.startsWith("/api/")) return response;
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
