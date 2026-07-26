@@ -123,10 +123,12 @@ export async function POST(request: Request) {
         { onConflict: "user_id,book_id" },
       );
 
+    // 章节就绪即可开始阅读；status 留在 uploaded，
+    // 等 /process 生成完向量才转 ready。
     await supabase
       .from("books")
       .update({
-        status: "ready",
+        status: "uploaded",
         file_path: filePath,
         chapter_count: chapters.length,
         error_message: null,

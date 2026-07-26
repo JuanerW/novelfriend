@@ -6,9 +6,9 @@ import { useState } from "react";
 import type { Book } from "@/types/db";
 
 const STATUS_LABEL: Record<Book["status"], string> = {
-  uploaded: "待处理",
-  processing: "处理中",
-  ready: "就绪",
+  uploaded: "可阅读 · 未建索引",
+  processing: "生成索引中",
+  ready: "可提问",
   failed: "失败",
 };
 
@@ -22,6 +22,25 @@ const STATUS_CLASS: Record<Book["status"], string> = {
 export default function BookCard({ book }: { book: Book }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexError, setIndexError] = useState<string | null>(null);
+
+  async function handleIndex() {
+    setIndexError(null);
+    setIndexing(true);
+    try {
+      const res = await fetch(`/api/books/${book.id}/process`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) setIndexError(data.error ?? "生成索引失败。");
+      router.refresh();
+    } catch {
+      setIndexError("网络错误，请重试。");
+    } finally {
+      setIndexing(false);
+    }
+  }
 
   async function handleDelete() {
     if (!confirm(`删除《${book.title}》？章节、向量和对话都会一起删除。`)) return;
@@ -55,15 +74,32 @@ export default function BookCard({ book }: { book: Book }) {
         {book.status === "failed" && book.error_message && (
           <p className="mt-1 text-xs text-red-600">{book.error_message}</p>
         )}
+        {indexError && <p className="mt-1 text-xs text-red-600">{indexError}</p>}
       </div>
 
-      <button
-        onClick={handleDelete}
-        disabled={deleting}
-        className="shrink-0 text-xs text-neutral-400 transition hover:text-red-600 disabled:opacity-50"
-      >
-        {deleting ? "删除中…" : "删除"}
-      </button>
+      <div className="flex shrink-0 items-center gap-3">
+        {book.status !== "processing" && (
+          <button
+            onClick={handleIndex}
+            disabled={indexing || deleting}
+            className="text-xs text-neutral-500 transition hover:text-neutral-900 disabled:opacity-50 dark:hover:text-neutral-200"
+          >
+            {indexing
+              ? "生成中…"
+              : book.status === "ready"
+                ? "重建索引"
+                : "生成索引"}
+          </button>
+        )}
+
+        <button
+          onClick={handleDelete}
+          disabled={deleting || indexing}
+          className="text-xs text-neutral-400 transition hover:text-red-600 disabled:opacity-50"
+        >
+          {deleting ? "删除中…" : "删除"}
+        </button>
+      </div>
     </div>
   );
 }

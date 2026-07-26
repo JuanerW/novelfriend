@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | 一 | 项目基础、注册登录、页面布局 | ✅ |
 | 二 | TXT 上传、章节识别、目录与正文、阅读进度 | ✅ |
-| 三 | LLM 配置、切分、Embedding、pgvector 检索 | ⬜ |
+| 三 | LLM 配置、切分、Embedding、pgvector 检索 | 🟡 代码完成，待接真实 API 联调 |
 | 四 | 无剧透聊天、章节引用、对话历史 | ⬜ |
 | 五 | 引用跳转、进度显示、失败重试、EPUB | ⬜ |
 
@@ -78,6 +78,22 @@ npm run dev
 
 编码方面，虽然规范写的是只支持 UTF-8，实际会先按 UTF-8 严格解码，
 失败则回退 GB18030（兼容 GBK/GB2312）。
+
+## 使用流程
+
+1. `/settings` 填 Base URL、API Key、Chat Model、Embedding Model，点「测试连接」。
+2. `/library` 上传 TXT，系统识别章节后即可阅读（状态 `可阅读 · 未建索引`）。
+3. 点「生成索引」跑 embedding，完成后状态变 `可提问`。
+4. 在阅读页点「我读到这里」标记进度，之后提问只会检索这一章及之前的内容。
+
+API Key 用 AES-256-GCM 加密后存库，只在服务端解密，
+接口和页面永远不会把完整 Key 返回给浏览器。
+
+### Embedding 维度
+
+`chunks.embedding` 声明为 `vector(1536)`，匹配 OpenAI `text-embedding-3-small`。
+换用其它维度的模型时，「测试连接」会提示维度不符，
+需要改 `0001_init.sql` 里的维度并重建索引。
 
 ## 无剧透规则
 

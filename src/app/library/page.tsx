@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "@/app/auth/actions";
@@ -30,11 +31,19 @@ export default async function LibraryPage() {
           <h1 className="text-2xl font-semibold">书架</h1>
           <p className="mt-1 text-sm text-neutral-500">{user.email}</p>
         </div>
-        <form action={logout}>
-          <button className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
-            退出
-          </button>
-        </form>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+          >
+            设置
+          </Link>
+          <form action={logout}>
+            <button className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200">
+              退出
+            </button>
+          </form>
+        </div>
       </header>
 
       <UploadForm />
