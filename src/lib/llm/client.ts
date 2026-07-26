@@ -70,7 +70,36 @@ async function post(
   return res;
 }
 
-/** 批量生成 embedding，返回顺序与入参一致。 */
+/** 429 和 5xx 是瞬时错误，值得重试；4xx（除 429）是配置问题，重试没意义。 */
+export function isTransient(e: unknown): boolean {
+  if (!(e instanceof LlmError)) return false;
+  if (e.status === undefined) return true; // 网络层错误
+  return e.status === 429 || e.status >= 500;
+}
+
+const MAX_RETRIES = 3;
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  delayMs = (attempt: number) => 1000 * 2 ** attempt,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt === MAX_RETRIES || !isTransient(e)) break;
+      // 指数退避：1s、2s、4s
+      await new Promise((r) => setTimeout(r, delayMs(attempt)));
+    }
+  }
+
+  throw lastError;
+}
+
+/** 批量生成 embedding，返回顺序与入参一致。瞬时错误会自动重试。 */
 export async function createEmbeddings(
   config: ProviderConfig,
   input: string[],
@@ -78,11 +107,8 @@ export async function createEmbeddings(
 ): Promise<number[][]> {
   if (input.length === 0) return [];
 
-  const res = await post(
-    config,
-    "/embeddings",
-    { model: config.embeddingModel, input },
-    signal,
+  const res = await withRetry(() =>
+    post(config, "/embeddings", { model: config.embeddingModel, input }, signal),
   );
 
   const json = (await res.json()) as {

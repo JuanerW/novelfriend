@@ -24,21 +24,58 @@ export default function BookCard({ book }: { book: Book }) {
   const [deleting, setDeleting] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
 
   async function handleIndex() {
     setIndexError(null);
+    setProgress(null);
     setIndexing(true);
+
     try {
       const res = await fetch(`/api/books/${book.id}/process`, {
         method: "POST",
       });
-      const data = await res.json();
-      if (!res.ok) setIndexError(data.error ?? "生成索引失败。");
-      router.refresh();
+
+      // 校验失败时接口仍然返回普通 JSON
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        setIndexError(data.error ?? "生成索引失败。");
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const raw of lines) {
+          if (!raw.trim()) continue;
+          const event = JSON.parse(raw);
+
+          if (event.type === "start") {
+            setProgress({ done: 0, total: event.total });
+          } else if (event.type === "progress") {
+            setProgress({ done: event.done, total: event.total });
+          } else if (event.type === "error") {
+            setIndexError(event.error);
+          }
+        }
+      }
     } catch {
       setIndexError("网络错误，请重试。");
     } finally {
       setIndexing(false);
+      setProgress(null);
+      router.refresh();
     }
   }
 
@@ -75,6 +112,22 @@ export default function BookCard({ book }: { book: Book }) {
           <p className="mt-1 text-xs text-red-600">{book.error_message}</p>
         )}
         {indexError && <p className="mt-1 text-xs text-red-600">{indexError}</p>}
+
+        {progress && (
+          <div className="mt-2">
+            <div className="h-1 w-full overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
+              <div
+                className="h-full bg-neutral-900 transition-all dark:bg-white"
+                style={{
+                  width: `${Math.round((progress.done / progress.total) * 100)}%`,
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">
+              生成向量 {progress.done} / {progress.total}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
@@ -88,7 +141,9 @@ export default function BookCard({ book }: { book: Book }) {
               ? "生成中…"
               : book.status === "ready"
                 ? "重建索引"
-                : "生成索引"}
+                : book.status === "failed"
+                  ? "重试"
+                  : "生成索引"}
           </button>
         )}
 

@@ -16,6 +16,21 @@ const EXPECTED_DIMENSIONS = 1536;
 
 type Params = { params: Promise<{ id: string }> };
 
+/**
+ * 响应是 NDJSON 流：
+ *   {"type":"start","total":301}
+ *   {"type":"progress","done":64,"total":301}
+ *   {"type":"done","chapterCount":38,"chunkCount":301}
+ *   {"type":"error","error":"…"}
+ *
+ * 用流式是因为一本长篇要跑几分钟，前端不该干等着没有任何反馈。
+ */
+type Event =
+  | { type: "start"; total: number }
+  | { type: "progress"; done: number; total: number }
+  | { type: "done"; chapterCount: number; chunkCount: number }
+  | { type: "error"; error: string };
+
 export async function POST(_request: Request, { params }: Params) {
   const { id } = await params;
   const supabase = await createClient();
@@ -61,92 +76,119 @@ export async function POST(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "这本书没有章节。" }, { status: 400 });
   }
 
+  // 切分。chunkChapter 保证不跨章节。
+  const pending = chapters.flatMap((ch) =>
+    chunkChapter(ch.chapter_index, ch.content).map((c) => ({
+      book_id: id,
+      chapter_id: ch.id,
+      user_id: user.id,
+      chapter_index: c.chapterIndex,
+      chunk_index: c.chunkIndex,
+      content: c.content,
+    })),
+  );
+
+  if (pending.length === 0) {
+    return NextResponse.json({ error: "切分后没有任何内容。" }, { status: 400 });
+  }
+
   await supabase
     .from("books")
     .update({ status: "processing", error_message: null })
     .eq("id", id);
 
-  async function fail(message: string, status = 500) {
-    await supabase
-      .from("books")
-      .update({ status: "failed", error_message: message })
-      .eq("id", id);
-    return NextResponse.json({ error: message }, { status });
-  }
+  const encoder = new TextEncoder();
+  const line = (e: Event) => encoder.encode(JSON.stringify(e) + "\n");
 
-  try {
-    // 重新索引前先清掉旧的，避免重复
-    await supabase
-      .from("chunks")
-      .delete()
-      .eq("book_id", id)
-      .eq("user_id", user.id);
+  const stream = new ReadableStream({
+    async start(controller) {
+      const markFailed = async (message: string) => {
+        await supabase
+          .from("books")
+          .update({ status: "failed", error_message: message })
+          .eq("id", id);
+        controller.enqueue(line({ type: "error", error: message }));
+        controller.close();
+      };
 
-    // 切分。chunkChapter 保证不跨章节。
-    const pending = chapters.flatMap((ch) =>
-      chunkChapter(ch.chapter_index, ch.content).map((c) => ({
-        book_id: id,
-        chapter_id: ch.id,
-        user_id: user!.id,
-        chapter_index: c.chapterIndex,
-        chunk_index: c.chunkIndex,
-        content: c.content,
-      })),
-    );
+      try {
+        // 重新索引前先清掉旧的，避免重复
+        await supabase
+          .from("chunks")
+          .delete()
+          .eq("book_id", id)
+          .eq("user_id", user.id);
 
-    if (pending.length === 0) {
-      return await fail("切分后没有任何内容。", 400);
-    }
+        controller.enqueue(line({ type: "start", total: pending.length }));
 
-    let inserted = 0;
-    const buffer: (typeof pending[number] & { embedding: number[] })[] = [];
+        let inserted = 0;
+        const buffer: (typeof pending[number] & { embedding: number[] })[] = [];
 
-    for (let i = 0; i < pending.length; i += EMBED_BATCH) {
-      const batch = pending.slice(i, i + EMBED_BATCH);
+        for (let i = 0; i < pending.length; i += EMBED_BATCH) {
+          const batch = pending.slice(i, i + EMBED_BATCH);
 
-      const vectors = await createEmbeddings(
-        config,
-        batch.map((c) => c.content),
-      );
+          const vectors = await createEmbeddings(
+            config,
+            batch.map((c) => c.content),
+          );
 
-      if (vectors[0]?.length !== EXPECTED_DIMENSIONS) {
-        return await fail(
-          `Embedding 维度是 ${vectors[0]?.length}，但数据库的 chunks.embedding 是 ` +
-            `vector(${EXPECTED_DIMENSIONS})。请换一个 ${EXPECTED_DIMENSIONS} 维的模型，` +
-            `或修改 migration 里的维度后重建索引。`,
-          400,
+          if (vectors[0]?.length !== EXPECTED_DIMENSIONS) {
+            return await markFailed(
+              `Embedding 维度是 ${vectors[0]?.length}，但数据库的 chunks.embedding 是 ` +
+                `vector(${EXPECTED_DIMENSIONS})。请换一个 ${EXPECTED_DIMENSIONS} 维的模型，` +
+                `或修改 migration 里的维度后重建索引。`,
+            );
+          }
+
+          batch.forEach((c, j) => buffer.push({ ...c, embedding: vectors[j] }));
+
+          // 攒够一批就落库，别把整本书的向量都堆在内存里
+          while (buffer.length >= INSERT_BATCH) {
+            const rows = buffer.splice(0, INSERT_BATCH);
+            const { error } = await supabase.from("chunks").insert(rows);
+            if (error) return await markFailed(`写入向量失败：${error.message}`);
+            inserted += rows.length;
+          }
+
+          controller.enqueue(
+            line({
+              type: "progress",
+              done: Math.min(i + EMBED_BATCH, pending.length),
+              total: pending.length,
+            }),
+          );
+        }
+
+        if (buffer.length) {
+          const { error } = await supabase.from("chunks").insert(buffer);
+          if (error) return await markFailed(`写入向量失败：${error.message}`);
+          inserted += buffer.length;
+        }
+
+        await supabase
+          .from("books")
+          .update({ status: "ready", error_message: null })
+          .eq("id", id);
+
+        controller.enqueue(
+          line({
+            type: "done",
+            chapterCount: chapters.length,
+            chunkCount: inserted,
+          }),
         );
+        controller.close();
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "未知错误";
+        await markFailed(`生成索引失败：${message}`);
       }
+    },
+  });
 
-      batch.forEach((c, j) => buffer.push({ ...c, embedding: vectors[j] }));
-
-      // 攒够一批就落库，别把整本书的向量都堆在内存里
-      while (buffer.length >= INSERT_BATCH) {
-        const rows = buffer.splice(0, INSERT_BATCH);
-        const { error } = await supabase.from("chunks").insert(rows);
-        if (error) return await fail(`写入向量失败：${error.message}`);
-        inserted += rows.length;
-      }
-    }
-
-    if (buffer.length) {
-      const { error } = await supabase.from("chunks").insert(buffer);
-      if (error) return await fail(`写入向量失败：${error.message}`);
-      inserted += buffer.length;
-    }
-
-    await supabase
-      .from("books")
-      .update({ status: "ready", error_message: null })
-      .eq("id", id);
-
-    return NextResponse.json({
-      ok: true,
-      chapterCount: chapters.length,
-      chunkCount: inserted,
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "未知错误";
-    return await fail(`生成索引失败：${message}`);
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
