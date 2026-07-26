@@ -185,15 +185,7 @@ drop policy if exists messages_self on public.messages;
 create policy messages_self on public.messages
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- ----------------------------------------------------------------- storage
-
-insert into storage.buckets (id, name, public)
-values ('novels', 'novels', false)
-on conflict (id) do nothing;
-
--- 路径约定 {user_id}/{book_id}/原文件名
-drop policy if exists novels_self on storage.objects;
-create policy novels_self on storage.objects
-  for all
-  using (bucket_id = 'novels' and auth.uid()::text = (storage.foldername(name))[1])
-  with check (bucket_id = 'novels' and auth.uid()::text = (storage.foldername(name))[1]);
+-- storage 相关的建 bucket 和策略放在 0003_storage.sql。
+-- 拆开是因为 Supabase 的 SQL Editor 默认整个脚本一个事务，
+-- 而 storage.objects 上建策略在部分项目会报 must be owner，
+-- 一旦失败会把前面的建表全部回滚。

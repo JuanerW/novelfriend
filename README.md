@@ -24,8 +24,21 @@ Settings → API 里的 **Project URL** 和 **anon public key**。
 
 ### 2. 执行数据库迁移
 
-把 `supabase/migrations/0001_init.sql` 的内容贴进 Supabase 控制台的
-SQL Editor 执行一次。它会建立：
+把 `supabase/migrations/` 下的三个脚本贴进 Supabase 控制台的 SQL Editor，
+**一个一个单独执行**，顺序不能反：
+
+```text
+0001_init.sql        建表、RLS、pgvector 扩展
+0002_match_chunks.sql 无剧透检索函数（依赖 0001 的表）
+0003_storage.sql     novels bucket 和访问策略
+```
+
+不要三个拼在一起跑。SQL Editor 默认整个脚本一个事务，
+末尾任何一句失败都会把前面全部回滚——而 `0003` 里给 `storage.objects`
+建策略在部分项目会报 `must be owner of table objects`。
+真报这个错就按 `0003_storage.sql` 顶部注释里的办法用控制台建。
+
+执行成功会显示 `Success. No rows returned`。这几个脚本会建立：
 
 - 全部业务表（`profiles` / `books` / `chapters` / `chunks` / `reading_progress` / `conversations` / `messages` / `provider_settings`）
 - 每张表的 Row Level Security 策略（只能访问 `user_id = auth.uid()` 的数据）

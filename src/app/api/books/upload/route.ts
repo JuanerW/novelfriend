@@ -57,8 +57,19 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError || !book) {
+    // 把数据库的原始报错带出来。最常见的就是迁移没执行，
+    // 这时候 Postgres 会说 relation "public.books" does not exist，
+    // 吞掉它只会让人无从下手。
+    const detail = insertError?.message ?? "没有返回记录";
+    const hint = /does not exist|schema cache/i.test(detail)
+      ? "看起来数据库迁移还没执行，请先在 Supabase 的 SQL Editor 里跑 supabase/migrations 下的两个脚本。"
+      : undefined;
+
     return NextResponse.json(
-      { error: "创建书籍记录失败。" },
+      {
+        error: `创建书籍记录失败：${detail}`,
+        hint,
+      },
       { status: 500 },
     );
   }

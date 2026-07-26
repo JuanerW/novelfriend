@@ -30,7 +30,7 @@ export default function UploadForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error ?? "上传失败。");
+        setError([data.error, data.hint].filter(Boolean).join(" ") || "上传失败。");
         return;
       }
 

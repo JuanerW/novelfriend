@@ -16,13 +16,18 @@ export default async function LibraryPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: books } = await supabase
+  const { data: books, error } = await supabase
     .from("books")
     .select("*")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   const list = (books ?? []) as Book[];
+
+  // 迁移没执行时这里会报表不存在。不能静默当成「还没有小说」，
+  // 那样看不出是数据库没准备好。
+  const migrationMissing =
+    error && /does not exist|schema cache/i.test(error.message);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -45,6 +50,26 @@ export default async function LibraryPage() {
           </form>
         </div>
       </header>
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm dark:border-red-900 dark:bg-red-950">
+          <p className="font-medium text-red-800 dark:text-red-300">
+            {migrationMissing ? "数据库还没准备好" : "读取书架失败"}
+          </p>
+          <p className="mt-1 text-xs text-red-700 dark:text-red-400">
+            {error.message}
+          </p>
+          {migrationMissing && (
+            <p className="mt-2 text-xs text-red-700 dark:text-red-400">
+              请在 Supabase 控制台的 SQL Editor 里依次执行
+              <code className="mx-1">supabase/migrations/0001_init.sql</code>
+              和
+              <code className="mx-1">0002_match_chunks.sql</code>，
+              然后刷新本页。
+            </p>
+          )}
+        </div>
+      )}
 
       <UploadForm />
 
