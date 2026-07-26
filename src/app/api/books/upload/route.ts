@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { decodeNovel } from "@/lib/parser/decode";
-import { guessTitleFromFilename, parseChapters } from "@/lib/parser/chapters";
+import {
+  extractMetadata,
+  guessTitleFromFilename,
+  parseChapters,
+} from "@/lib/parser/chapters";
 import { toStorageName } from "@/lib/parser/filename";
 
 export const runtime = "nodejs";
@@ -106,6 +110,10 @@ export async function POST(request: Request) {
     const { text, encoding } = decodeNovel(buffer);
     const { chapters, fallback } = parseChapters(text);
 
+    // 开头的「《书名》」「作者：某某」两行会被 parseChapters 当元信息丢掉，
+    // 这里先把作者捞出来
+    const metadata = extractMetadata(text);
+
     if (chapters.length === 0) {
       return await fail("文件里没有可读的正文内容。", 400);
     }
@@ -145,6 +153,7 @@ export async function POST(request: Request) {
         status: "uploaded",
         file_path: filePath,
         chapter_count: chapters.length,
+        author: metadata.author ?? null,
         error_message: null,
       })
       .eq("id", book.id);

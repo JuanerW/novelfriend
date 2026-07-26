@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { parseChapters, guessTitleFromFilename } from "./chapters";
+import { parseChapters, guessTitleFromFilename, extractMetadata } from "./chapters";
 
 test("识别「第X章」和中文数字", () => {
   const { chapters, fallback } = parseChapters(
@@ -90,6 +90,53 @@ test("测试小说的剧透分布符合预期", () => {
   assert.ok(chapters[2].content.includes("甲"), "第 3 章应有人猜测是甲");
   assert.ok(!chapters[2].content.includes("乙"), "第 3 章不应提到乙");
   assert.ok(chapters[3].content.includes("乙"), "第 4 章才揭晓是乙");
+});
+
+test("开头只有书名作者两行时，不会多出一个伪章节", () => {
+  const raw = [
+    "《某书：副标题》",
+    "作者：某某",
+    "",
+    "前言",
+    "这是真正的前言内容。",
+    "",
+    "1.第一节",
+    "正文。",
+    "2.第二节",
+    "正文。",
+  ].join("\n");
+
+  const { chapters } = parseChapters(raw);
+  const prefaces = chapters.filter((c) => c.title === "前言");
+  assert.equal(prefaces.length, 1, "「前言」只应出现一次");
+  assert.ok(
+    !chapters.some((c) => c.content.includes("作者：某某")),
+    "书名作者行不该成为章节内容",
+  );
+});
+
+test("开头有大段正文时保留为「开篇」", () => {
+  const lead = "这是一段没有标题的开场文字。".repeat(20); // 远超 150 字
+  const raw = [lead, "", "1.第一节", "正文。", "2.第二节", "正文。"].join("\n");
+
+  const { chapters } = parseChapters(raw);
+  assert.equal(chapters[0].title, "开篇");
+  assert.ok(chapters[0].content.includes("开场文字"));
+});
+
+test("提取书名和作者", () => {
+  const meta = extractMetadata("《三体：地球往事》\n作者：刘慈欣\n\n正文开始");
+  assert.equal(meta.title, "三体：地球往事");
+  assert.equal(meta.author, "刘慈欣");
+});
+
+test("没有元信息时返回空对象", () => {
+  assert.deepEqual(extractMetadata("直接就是正文。\n第二段。"), {});
+});
+
+test("元信息只在开头几行里找，不会捞到正文里的「作者：」", () => {
+  const raw = Array(30).fill("正文行。").join("\n") + "\n作者：冒充的";
+  assert.equal(extractMetadata(raw).author, undefined);
 });
 
 test("从文件名猜书名", () => {

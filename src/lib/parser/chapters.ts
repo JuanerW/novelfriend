@@ -19,6 +19,12 @@ const MAX_TITLE_LENGTH = 40;
 /** 相邻章节编号最大允许跳跃，防止把年份、页码认成章节号。 */
 const MAX_ORDINAL_GAP = 20;
 
+/**
+ * 第一个章节标题之前的文字，至少要多少字才当成一章。
+ * 低于这个长度基本就是书名和作者两行，属于元信息不是正文。
+ */
+const MIN_LEAD_CHARS = 150;
+
 const CN_DIGITS: Record<string, number> = {
   零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4,
   五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
@@ -171,10 +177,14 @@ export function parseChapters(raw: string): ParseResult {
 
   const chapters: ParsedChapter[] = [];
 
-  // 第一个标题之前的正文单独保留，避免丢内容
-  const preface = lines.slice(0, headings[0].line).join("\n").trim();
-  if (preface) {
-    chapters.push({ chapterIndex: 1, title: "前言", content: preface });
+  // 第一个标题之前的文字。
+  //
+  // 这里通常只有《书名》和「作者：某某」两行，不是正文，不该单独成一章——
+  // 而且很多书紧接着就有一个真正的「前言」标题，硬编码叫「前言」会出现两个。
+  // 所以只有内容够长时才保留，标题也换成不会撞车的「开篇」。
+  const lead = lines.slice(0, headings[0].line).join("\n").trim();
+  if (lead.length >= MIN_LEAD_CHARS) {
+    chapters.push({ chapterIndex: 0, title: "开篇", content: lead });
   }
 
   for (let h = 0; h < headings.length; h++) {
@@ -197,6 +207,46 @@ export function parseChapters(raw: string): ParseResult {
   });
 
   return { chapters, fallback: chapters.length === 0 };
+}
+
+/**
+ * 从文件开头几行里抓书名和作者。
+ *
+ * 常见格式：
+ *   《三体：地球往事》
+ *   作者：刘慈欣
+ *
+ * 这些行会被 parseChapters 当成元信息丢掉，所以在这里先捞一遍，
+ * 至少把作者存进 books.author。
+ */
+export function extractMetadata(raw: string): {
+  title?: string;
+  author?: string;
+} {
+  const head = normalizeText(raw).split("\n").slice(0, 20);
+  const result: { title?: string; author?: string } = {};
+
+  for (const line of head) {
+    const l = line.trim();
+    if (!l || l.length > 60) continue;
+
+    if (!result.author) {
+      const m = l.match(/^(?:作\s*者|著\s*者|作者名)\s*[：:]\s*(.+)$/);
+      if (m) result.author = m[1].trim().slice(0, 40);
+    }
+
+    if (!result.title) {
+      // 《书名》 单独一行，或者「书名：xxx」
+      const m =
+        l.match(/^《\s*([^》]+?)\s*》/) ??
+        l.match(/^(?:书\s*名)\s*[：:]\s*(.+)$/);
+      if (m) result.title = m[1].trim().slice(0, 80);
+    }
+
+    if (result.title && result.author) break;
+  }
+
+  return result;
 }
 
 /** 从文件名猜书名：去掉扩展名和常见的下载站后缀。 */

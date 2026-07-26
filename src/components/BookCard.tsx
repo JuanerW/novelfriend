@@ -106,6 +106,7 @@ export default function BookCard({ book }: { book: Book }) {
           >
             {STATUS_LABEL[book.status]}
           </span>
+          {book.author && <span>{book.author}</span>}
           {book.chapter_count > 0 && <span>{book.chapter_count} 章</span>}
         </div>
         {book.status === "failed" && book.error_message && (
